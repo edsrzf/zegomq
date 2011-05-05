@@ -53,6 +53,7 @@ func NewSocket(typ int, identity string) (*Socket, os.Error) {
 		mw := make(multiWriter, 0, 5)
 		w = newFrameWriter(mw)
 	case SOCK_SUB:
+		r = newQueuedReader()
 	case SOCK_REQ:
 	case SOCK_REP:
 	case SOCK_PULL:
