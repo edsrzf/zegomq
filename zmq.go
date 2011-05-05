@@ -20,22 +20,22 @@ const (
 	SOCK_PUSH
 )
 
-type binder interface {
-	bind(rwc io.ReadWriteCloser)
-}
+type nilWBinder struct {}
 
-type nilBinder struct {}
+func (b nilWBinder) bind(wc io.WriteCloser) {}
 
-func (b nilBinder) bind(rwc io.ReadWriteCloser) {}
+type nilRBinder struct {}
+
+func (b nilRBinder) bind(fr *defFrameReader) {}
 
 type frameReader interface {
-	binder
+	bind(fr *defFrameReader)
 	ReadFrame([]byte) ([]byte, os.Error)
 }
 
 type bindWriter interface {
-	binder
 	io.Writer
+	bind(wc io.WriteCloser)
 }
 
 type Socket struct {
@@ -92,16 +92,16 @@ func (s *Socket) Bind(network, addr string) os.Error {
 		b[1] = 0
 		copy(b[2:], s.identity)
 		fw.Write(b)
-		fc := newFrameReader(conn)
-		fc.ReadFrame(nil)
+		fr := newFrameReader(conn)
+		fr.ReadFrame(nil)
 		s.w.bind(conn)
 	}
 	if s.r != nil {
 		fw := newFrameWriter(conn)
 		fw.Write(nil)
-		fc := newFrameReader(conn)
-		fc.ReadFrame(nil)
-		s.r.bind(conn)
+		fr := newFrameReader(conn)
+		fr.ReadFrame(nil)
+		s.r.bind(fr)
 	}
 	return nil
 }
@@ -131,8 +131,8 @@ func (mw multiWriter) Close() (err os.Error) {
 	return
 }
 
-func (mw multiWriter) bind(rwc io.ReadWriteCloser) {
-	mw = append(mw, rwc)
+func (mw multiWriter) bind(wc io.WriteCloser) {
+	mw = append(mw, wc)
 }
 
 // A load-balanced WriteCloser
@@ -146,10 +146,10 @@ func newLbWriter() *lbWriter {
 	return &lbWriter{nil, c}
 }
 
-func (w *lbWriter) bind(rwc io.ReadWriteCloser) {
-	go writeListen(rwc, w.c)
+func (w *lbWriter) bind(wc io.WriteCloser) {
+	go writeListen(wc, w.c)
 	// TODO: figure out a better way to keep track of writers
-	w.w = append(w.w, rwc)
+	w.w = append(w.w, wc)
 }
 
 func writeListen(w io.WriteCloser, c chan []byte) {
@@ -179,8 +179,7 @@ func (w *lbWriter) Close() os.Error {
 }
 
 type queuedReader struct {
-	// TODO: change to ReadCloser
-	r []io.ReadWriteCloser
+	fr []*defFrameReader
 	c chan []byte
 }
 
@@ -189,11 +188,10 @@ func newQueuedReader() *queuedReader {
 	return &queuedReader{nil, c}
 }
 
-func (r *queuedReader) bind(rwc io.ReadWriteCloser) {
-	fr := newFrameReader(rwc)
+func (r *queuedReader) bind(fr *defFrameReader) {
 	go readListen(fr, r.c)
 	// TODO: figure out a better way to keep track of readers
-	r.r = append(r.r, rwc)
+	r.fr = append(r.fr, fr)
 }
 
 func readListen(fr *defFrameReader, c chan []byte) {
@@ -213,31 +211,21 @@ func (r *queuedReader) ReadFrame(body []byte) ([]byte, os.Error) {
 }
 
 func (r *queuedReader) Close() os.Error {
-	for _, r := range r.r {
+	for _, r := range r.fr {
 		r.Close()
 	}
 	return nil
 }
 
 type frameWriter struct {
-	nilBinder
+	nilWBinder
 	wc io.WriteCloser
 	buf *bufio.Writer
-}
-
-type defFrameReader struct {
-	rc io.ReadCloser
-	buf *bufio.Reader
 }
 
 func newFrameWriter(wc io.WriteCloser) *frameWriter {
 	w := &frameWriter{wc: wc, buf: bufio.NewWriter(wc)}
 	return w
-}
-
-func newFrameReader(rc io.ReadCloser) *defFrameReader {
-	r := &defFrameReader{rc, bufio.NewReader(rc)}
-	return r
 }
 
 func (fc *frameWriter) Write(b []byte) (n int, err os.Error) {
@@ -271,14 +259,25 @@ func (fc *frameWriter) Close() os.Error {
 	return fc.wc.Close()
 }
 
-func (fc *defFrameReader) ReadFrame(body []byte) ([]byte, os.Error) {
+type defFrameReader struct {
+	nilRBinder
+	rc io.ReadCloser
+	buf *bufio.Reader
+}
+
+func newFrameReader(rc io.ReadCloser) *defFrameReader {
+	r := &defFrameReader{rc: rc, buf: bufio.NewReader(rc)}
+	return r
+}
+
+func (fr *defFrameReader) ReadFrame(body []byte) ([]byte, os.Error) {
 	var length uint64
 	var b [8]byte
-	if _, err := fc.buf.Read(b[:1]); err != nil {
+	if _, err := fr.buf.Read(b[:1]); err != nil {
 		return nil, err
 	}
 	if b[0] == 255 {
-		if _, err := fc.buf.Read(b[:]); err != nil {
+		if _, err := fr.buf.Read(b[:]); err != nil {
 			return nil, err
 		}
 		length = binary.BigEndian.Uint64(b[:])
@@ -288,7 +287,7 @@ func (fc *defFrameReader) ReadFrame(body []byte) ([]byte, os.Error) {
 	if uint64(len(body)) < length {
 		body = make([]byte, length)
 	}
-	if _, err := fc.buf.Read(body); err != nil {
+	if _, err := fr.buf.Read(body); err != nil {
 		return nil, err
 	}
 	if body[0]&1 != 0 {
@@ -297,6 +296,6 @@ func (fc *defFrameReader) ReadFrame(body []byte) ([]byte, os.Error) {
 	return body[1:], nil
 }
 
-func (fc *defFrameReader) Close() os.Error {
-	return fc.rc.Close()
+func (fr *defFrameReader) Close() os.Error {
+	return fr.rc.Close()
 }
