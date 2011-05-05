@@ -27,7 +27,9 @@ const (
 	SOCK_PUSH
 )
 
-type nilWAdder struct {}
+type nilWAdder struct {
+	net.Conn
+}
 
 func (b nilWAdder) addConn(wc io.WriteCloser) {}
 
@@ -41,23 +43,23 @@ type reader interface {
 }
 
 type bindWriter interface {
-	io.Writer
+	io.WriteCloser
 	addConn(wc io.WriteCloser)
 }
 
 type Socket struct {
 	identity string
 	r reader
-	w bindWriter
+	w *frameWriter
 }
 
 func NewSocket(typ int, identity string) (*Socket, os.Error) {
 	var r reader
-	var w bindWriter
+	var w *frameWriter
 	switch typ {
 	case SOCK_PAIR:
 	case SOCK_PUB:
-		mw := make(multiWriter, 0, 5)
+		mw := newMultiWriter()
 		w = newFrameWriter(mw)
 	case SOCK_SUB:
 		r = newQueuedReader()
@@ -66,7 +68,8 @@ func NewSocket(typ int, identity string) (*Socket, os.Error) {
 	case SOCK_PULL:
 		r = newQueuedReader()
 	case SOCK_PUSH:
-		w = newLbWriter()
+		lbw := newLbWriter()
+		w = newFrameWriter(lbw)
 	default:
 	}
 	return &Socket{identity, r, w}, nil
@@ -104,33 +107,21 @@ func (s *Socket) Connect(addr string) os.Error {
 		return err
 	}
 	// TODO: avoid making extra frameWriters and frameReaders
+	fw := newFrameWriter(nilWAdder{conn})
+	fw.sendIdentity(s.identity)
+
+	fr := newFrameReader(conn)
+	msg, err := fr.RecvMsg()
+	if err != nil {
+		return err
+	}
+	io.Copy(ioutil.Discard, msg)
+	msg.Close()
+
 	if s.w != nil {
-		fw := newFrameWriter(conn)
-		// TODO: write identity properly
-		b := make([]byte, len(s.identity)+2)
-		b[0] = byte(len(s.identity))
-		b[1] = 0
-		copy(b[2:], s.identity)
-		fw.Write(b)
-		fr := newFrameReader(conn)
-		msg, err := fr.RecvMsg()
-		if err != nil {
-			return err
-		}
-		io.Copy(ioutil.Discard, msg)
-		msg.Close()
 		s.w.addConn(conn)
 	}
 	if s.r != nil {
-		fw := newFrameWriter(conn)
-		fw.Write(nil)
-		fr := newFrameReader(conn)
-		msg, err := fr.RecvMsg()
-		if err != nil {
-			return err
-		}
-		io.Copy(ioutil.Discard, msg)
-		msg.Close()
 		s.r.addConn(fr)
 	}
 	return nil
@@ -139,9 +130,14 @@ func (s *Socket) Connect(addr string) os.Error {
 // Similar to io.MultiWriter, but we have access to its internals and it has a Close method.
 type multiWriter []io.WriteCloser
 
-func (mw multiWriter) Write(p []byte) (n int, err os.Error) {
+func newMultiWriter() *multiWriter {
+	mw := make(multiWriter, 0, 5)
+	return &mw
+}
+
+func (mw *multiWriter) Write(p []byte) (n int, err os.Error) {
 	n = len(p)
-	for _, w := range mw {
+	for _, w := range *mw {
 		n2, err2 := w.Write(p)
 		if err2 != nil {
 			n = n2
@@ -151,8 +147,8 @@ func (mw multiWriter) Write(p []byte) (n int, err os.Error) {
 	return
 }
 
-func (mw multiWriter) Close() (err os.Error) {
-	for _, w := range mw {
+func (mw *multiWriter) Close() (err os.Error) {
+	for _, w := range *mw {
 		err2 := w.Close()
 		if err2 != nil {
 			err = err2
@@ -161,8 +157,8 @@ func (mw multiWriter) Close() (err os.Error) {
 	return
 }
 
-func (mw multiWriter) addConn(wc io.WriteCloser) {
-	mw = append(mw, wc)
+func (mw *multiWriter) addConn(wc io.WriteCloser) {
+	*mw = append(*mw, wc)
 }
 
 // A load-balanced WriteCloser
@@ -247,14 +243,22 @@ func (r *queuedReader) Close() os.Error {
 }
 
 type frameWriter struct {
-	nilWAdder
-	wc io.WriteCloser
+	bindWriter
 	buf *bufio.Writer
 }
 
-func newFrameWriter(wc io.WriteCloser) *frameWriter {
-	w := &frameWriter{wc: wc, buf: bufio.NewWriter(wc)}
+func newFrameWriter(wc bindWriter) *frameWriter {
+	w := &frameWriter{wc, bufio.NewWriter(wc)}
 	return w
+}
+
+func (fw *frameWriter) sendIdentity(id string) os.Error {
+	var b []byte
+	if id != "" {
+		b = []byte(id)
+	}
+	_, err := fw.Write(b)
+	return err
 }
 
 func (fc *frameWriter) Write(b []byte) (n int, err os.Error) {
@@ -282,10 +286,6 @@ func (fc *frameWriter) Write(b []byte) (n int, err os.Error) {
 	n += nn
 	fc.buf.Flush()
 	return
-}
-
-func (fc *frameWriter) Close() os.Error {
-	return fc.wc.Close()
 }
 
 type frameReader struct {
