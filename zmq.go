@@ -21,22 +21,22 @@ const (
 	SOCK_PUSH
 )
 
-type nilWBinder struct {}
+type nilWAdder struct {}
 
-func (b nilWBinder) bind(wc io.WriteCloser) {}
+func (b nilWAdder) addConn(wc io.WriteCloser) {}
 
-type nilRBinder struct {}
+type nilRAdder struct {}
 
-func (b nilRBinder) bind(fr *defFrameReader) {}
+func (b nilRAdder) addConn(fr *defFrameReader) {}
 
 type frameReader interface {
-	bind(fr *defFrameReader)
+	addConn(fr *defFrameReader)
 	ReadFrame([]byte) ([]byte, os.Error)
 }
 
 type bindWriter interface {
 	io.Writer
-	bind(wc io.WriteCloser)
+	addConn(wc io.WriteCloser)
 }
 
 type Socket struct {
@@ -80,7 +80,7 @@ func (s *Socket) Write(b []byte) (int, os.Error) {
 	return s.w.Write(b)
 }
 
-func (s *Socket) Bind(addr string) os.Error {
+func (s *Socket) Connect(addr string) os.Error {
 	url, err := http.ParseURL(addr)
 	if err != nil {
 		return err
@@ -108,14 +108,14 @@ func (s *Socket) Bind(addr string) os.Error {
 		fw.Write(b)
 		fr := newFrameReader(conn)
 		fr.ReadFrame(nil)
-		s.w.bind(conn)
+		s.w.addConn(conn)
 	}
 	if s.r != nil {
 		fw := newFrameWriter(conn)
 		fw.Write(nil)
 		fr := newFrameReader(conn)
 		fr.ReadFrame(nil)
-		s.r.bind(fr)
+		s.r.addConn(fr)
 	}
 	return nil
 }
@@ -145,7 +145,7 @@ func (mw multiWriter) Close() (err os.Error) {
 	return
 }
 
-func (mw multiWriter) bind(wc io.WriteCloser) {
+func (mw multiWriter) addConn(wc io.WriteCloser) {
 	mw = append(mw, wc)
 }
 
@@ -160,7 +160,7 @@ func newLbWriter() *lbWriter {
 	return &lbWriter{nil, c}
 }
 
-func (w *lbWriter) bind(wc io.WriteCloser) {
+func (w *lbWriter) addConn(wc io.WriteCloser) {
 	go writeListen(wc, w.c)
 	// TODO: figure out a better way to keep track of writers
 	w.w = append(w.w, wc)
@@ -202,7 +202,7 @@ func newQueuedReader() *queuedReader {
 	return &queuedReader{nil, c}
 }
 
-func (r *queuedReader) bind(fr *defFrameReader) {
+func (r *queuedReader) addConn(fr *defFrameReader) {
 	go readListen(fr, r.c)
 	// TODO: figure out a better way to keep track of readers
 	r.fr = append(r.fr, fr)
@@ -232,7 +232,7 @@ func (r *queuedReader) Close() os.Error {
 }
 
 type frameWriter struct {
-	nilWBinder
+	nilWAdder
 	wc io.WriteCloser
 	buf *bufio.Writer
 }
@@ -274,7 +274,7 @@ func (fc *frameWriter) Close() os.Error {
 }
 
 type defFrameReader struct {
-	nilRBinder
+	nilRAdder
 	rc io.ReadCloser
 	buf *bufio.Reader
 }
