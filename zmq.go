@@ -3,6 +3,7 @@ package zmq
 import (
 	"bufio"
 	"encoding/binary"
+	"http"
 	"io"
 	"net"
 	"os"
@@ -79,8 +80,20 @@ func (s *Socket) Write(b []byte) (int, os.Error) {
 	return s.w.Write(b)
 }
 
-func (s *Socket) Bind(network, addr string) os.Error {
-	conn, err := net.Dial(network, addr)
+func (s *Socket) Bind(addr string) os.Error {
+	url, err := http.ParseURL(addr)
+	if err != nil {
+		return err
+	}
+	var conn net.Conn
+	switch url.Scheme {
+	case "ipc":
+		conn, err = net.Dial("unix", url.Host + url.Path)
+	case "tcp":
+		conn, err = net.Dial("tcp", url.Host)
+	default:
+		err = os.NewError("unsupported URL scheme")
+	}
 	if err != nil {
 		return err
 	}
