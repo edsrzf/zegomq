@@ -5,8 +5,14 @@ import (
 	"encoding/binary"
 	"http"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
+	"sync"
+)
+
+const (
+	flagMore = 1
 )
 
 const (
@@ -27,11 +33,11 @@ func (b nilWAdder) addConn(wc io.WriteCloser) {}
 
 type nilRAdder struct {}
 
-func (b nilRAdder) addConn(fr *defFrameReader) {}
+func (b nilRAdder) addConn(fr *frameReader) {}
 
-type frameReader interface {
-	addConn(fr *defFrameReader)
-	ReadFrame([]byte) ([]byte, os.Error)
+type reader interface {
+	addConn(fr *frameReader)
+	RecvMsg() (io.ReadCloser, os.Error)
 }
 
 type bindWriter interface {
@@ -41,12 +47,12 @@ type bindWriter interface {
 
 type Socket struct {
 	identity string
-	r frameReader
+	r reader
 	w bindWriter
 }
 
 func NewSocket(typ int, identity string) (*Socket, os.Error) {
-	var r frameReader
+	var r reader
 	var w bindWriter
 	switch typ {
 	case SOCK_PAIR:
@@ -66,11 +72,11 @@ func NewSocket(typ int, identity string) (*Socket, os.Error) {
 	return &Socket{identity, r, w}, nil
 }
 
-func (s *Socket) ReadFrame(body []byte) ([]byte, os.Error) {
+func (s *Socket) RecvMsg() (io.ReadCloser, os.Error) {
 	if s.r == nil {
-		return body, os.NewError("socket is not readable")
+		return nil, os.NewError("socket is not readable")
 	}
-	return s.r.ReadFrame(body)
+	return s.r.RecvMsg()
 }
 
 func (s *Socket) Write(b []byte) (int, os.Error) {
@@ -107,14 +113,24 @@ func (s *Socket) Connect(addr string) os.Error {
 		copy(b[2:], s.identity)
 		fw.Write(b)
 		fr := newFrameReader(conn)
-		fr.ReadFrame(nil)
+		msg, err := fr.RecvMsg()
+		if err != nil {
+			return err
+		}
+		io.Copy(ioutil.Discard, msg)
+		msg.Close()
 		s.w.addConn(conn)
 	}
 	if s.r != nil {
 		fw := newFrameWriter(conn)
 		fw.Write(nil)
 		fr := newFrameReader(conn)
-		fr.ReadFrame(nil)
+		msg, err := fr.RecvMsg()
+		if err != nil {
+			return err
+		}
+		io.Copy(ioutil.Discard, msg)
+		msg.Close()
 		s.r.addConn(fr)
 	}
 	return nil
@@ -193,35 +209,34 @@ func (w *lbWriter) Close() os.Error {
 }
 
 type queuedReader struct {
-	fr []*defFrameReader
-	c chan []byte
+	fr []*frameReader
+	c chan io.ReadCloser
 }
 
 func newQueuedReader() *queuedReader {
-	c := make(chan []byte, 10)
+	c := make(chan io.ReadCloser, 10)
 	return &queuedReader{nil, c}
 }
 
-func (r *queuedReader) addConn(fr *defFrameReader) {
+func (r *queuedReader) addConn(fr *frameReader) {
 	go readListen(fr, r.c)
 	// TODO: figure out a better way to keep track of readers
 	r.fr = append(r.fr, fr)
 }
 
-func readListen(fr *defFrameReader, c chan []byte) {
+func readListen(fr *frameReader, c chan io.ReadCloser) {
 	for {
-		// TODO: stop the allocation!
-		b, err := fr.ReadFrame(nil)
+		mr, err := fr.RecvMsg()
 		if err != nil {
 			break
 		}
-		c <- b
+		c <- mr
 	}
 }
 
-func (r *queuedReader) ReadFrame(body []byte) ([]byte, os.Error) {
-	b := <-r.c
-	return b, nil
+func (r *queuedReader) RecvMsg() (io.ReadCloser, os.Error) {
+	mr := <-r.c
+	return mr, nil
 }
 
 func (r *queuedReader) Close() os.Error {
@@ -273,43 +288,86 @@ func (fc *frameWriter) Close() os.Error {
 	return fc.wc.Close()
 }
 
-type defFrameReader struct {
+type frameReader struct {
 	nilRAdder
+	lock sync.Mutex
 	rc io.ReadCloser
 	buf *bufio.Reader
 }
 
-func newFrameReader(rc io.ReadCloser) *defFrameReader {
-	r := &defFrameReader{rc: rc, buf: bufio.NewReader(rc)}
+type msgReader struct {
+	length uint64 // length of the current frame
+	more bool // whether there are more frames after this one
+	buf *bufio.Reader
+	lock *sync.Mutex
+}
+
+func newMsgReader(buf *bufio.Reader, lock *sync.Mutex) (*msgReader, os.Error) {
+	r := &msgReader{buf: buf, lock: lock}
+	err := r.readHeader()
+	return r, err
+}
+
+func (r *msgReader) readHeader() os.Error {
+	var b [8]byte
+	if _, err := r.buf.Read(b[:1]); err != nil {
+		return err
+	}
+	if b[0] == 255 {
+		if _, err := r.buf.Read(b[:]); err != nil {
+			return err
+		}
+		r.length = binary.BigEndian.Uint64(b[:])
+	} else {
+		r.length = uint64(b[0])
+	}
+	r.length--
+	flags, err := r.buf.ReadByte()
+	if err != nil {
+		return err
+	}
+	r.more = flags & flagMore != 0
+	return nil
+}
+
+func (r *msgReader) Read(b []byte) (n int, err os.Error) {
+	for n < len(b) {
+		l := uint64(len(b) - n)
+		if r.length < l {
+			l = r.length
+		}
+		nn, err := r.buf.Read(b[n:n+int(l)])
+		n += nn
+		r.length -= uint64(nn)
+		if err != nil {
+			return n, err
+		}
+		if r.length == 0 {
+			if r.more {
+				r.readHeader()
+			} else {
+				return n, os.EOF
+			}
+		}
+	}
+	return
+}
+
+func (r *msgReader) Close() os.Error {
+	r.lock.Unlock()
+	return nil
+}
+
+func newFrameReader(rc io.ReadCloser) *frameReader {
+	r := &frameReader{rc: rc, buf: bufio.NewReader(rc)}
 	return r
 }
 
-func (fr *defFrameReader) ReadFrame(body []byte) ([]byte, os.Error) {
-	var length uint64
-	var b [8]byte
-	if _, err := fr.buf.Read(b[:1]); err != nil {
-		return nil, err
-	}
-	if b[0] == 255 {
-		if _, err := fr.buf.Read(b[:]); err != nil {
-			return nil, err
-		}
-		length = binary.BigEndian.Uint64(b[:])
-	} else {
-		length = uint64(b[0])
-	}
-	if uint64(len(body)) < length {
-		body = make([]byte, length)
-	}
-	if _, err := fr.buf.Read(body); err != nil {
-		return nil, err
-	}
-	if body[0]&1 != 0 {
-		panic("can't handle MORE")
-	}
-	return body[1:], nil
+func (fr *frameReader) RecvMsg() (io.ReadCloser, os.Error) {
+	fr.lock.Lock()
+	return newMsgReader(fr.buf, &fr.lock)
 }
 
-func (fr *defFrameReader) Close() os.Error {
+func (fr *frameReader) Close() os.Error {
 	return fr.rc.Close()
 }
