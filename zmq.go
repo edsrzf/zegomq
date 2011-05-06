@@ -47,13 +47,21 @@ type bindWriter interface {
 	addConn(wc io.WriteCloser)
 }
 
+type Context struct {
+}
+
+func NewContext() (*Context, os.Error) {
+	return &Context{}, nil
+}
+
 type Socket struct {
+	c *Context
 	identity string
 	r reader
 	w *frameWriter
 }
 
-func NewSocket(typ int, identity string) (*Socket, os.Error) {
+func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
 	var r reader
 	var w *frameWriter
 	switch typ {
@@ -72,7 +80,7 @@ func NewSocket(typ int, identity string) (*Socket, os.Error) {
 		w = newFrameWriter(lbw)
 	default:
 	}
-	return &Socket{identity, r, w}, nil
+	return &Socket{c, identity, r, w}, nil
 }
 
 func (s *Socket) RecvMsg() (io.ReadCloser, os.Error) {
