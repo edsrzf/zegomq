@@ -33,7 +33,7 @@ type nilWAdder struct {
 
 func (b nilWAdder) addConn(wc io.WriteCloser) {}
 
-type nilRAdder struct {}
+type nilRAdder struct{}
 
 func (b nilRAdder) addConn(fr *frameReader) {}
 
@@ -49,6 +49,7 @@ type bindWriter interface {
 }
 
 type Context struct {
+
 }
 
 func NewContext() (*Context, os.Error) {
@@ -56,10 +57,10 @@ func NewContext() (*Context, os.Error) {
 }
 
 type Socket struct {
-	c *Context
+	c        *Context
 	identity string
-	r reader
-	w *frameWriter
+	r        reader
+	w        *frameWriter
 }
 
 func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
@@ -106,7 +107,7 @@ func (s *Socket) Connect(addr string) os.Error {
 	var conn net.Conn
 	switch url.Scheme {
 	case "ipc":
-		conn, err = net.Dial("unix", url.Host + url.Path)
+		conn, err = net.Dial("unix", url.Host+url.Path)
 	case "tcp":
 		conn, err = net.Dial("tcp", url.Host)
 	default:
@@ -228,7 +229,7 @@ func (w *lbWriter) Close() os.Error {
 
 type queuedReader struct {
 	fr []*frameReader
-	c chan io.ReadCloser
+	c  chan io.ReadCloser
 }
 
 func newQueuedReader() *queuedReader {
@@ -313,15 +314,15 @@ func (fc *frameWriter) Write(b []byte) (n int, err os.Error) {
 type frameReader struct {
 	nilRAdder
 	lock sync.Mutex
-	rc io.ReadCloser
-	buf *bufio.Reader
+	rc   io.ReadCloser
+	buf  *bufio.Reader
 }
 
 type msgReader struct {
 	length uint64 // length of the current frame
-	more bool // whether there are more frames after this one
-	buf *bufio.Reader
-	lock *sync.Mutex
+	more   bool   // whether there are more frames after this one
+	buf    *bufio.Reader
+	lock   *sync.Mutex
 }
 
 func newMsgReader(buf *bufio.Reader, lock *sync.Mutex) (*msgReader, os.Error) {
@@ -348,7 +349,7 @@ func (r *msgReader) readHeader() os.Error {
 	if err != nil {
 		return err
 	}
-	r.more = flags & flagMore != 0
+	r.more = flags&flagMore != 0
 	return nil
 }
 
@@ -358,7 +359,7 @@ func (r *msgReader) Read(b []byte) (n int, err os.Error) {
 		if r.length < l {
 			l = r.length
 		}
-		nn, err := r.buf.Read(b[n:n+int(l)])
+		nn, err := r.buf.Read(b[n : n+int(l)])
 		n += nn
 		r.length -= uint64(nn)
 		if err != nil {
