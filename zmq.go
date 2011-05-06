@@ -40,6 +40,7 @@ func (b nilRAdder) addConn(fr *frameReader) {}
 type reader interface {
 	addConn(fr *frameReader)
 	RecvMsg() (io.ReadCloser, os.Error)
+	Close() os.Error
 }
 
 type bindWriter interface {
@@ -133,6 +134,19 @@ func (s *Socket) Connect(addr string) os.Error {
 		s.r.addConn(fr)
 	}
 	return nil
+}
+
+func (s *Socket) Close() (err os.Error) {
+	if s.w != nil {
+		err = s.w.Close()
+	}
+	if s.r != nil {
+		err2 := s.r.Close()
+		if err == nil {
+			err = err2
+		}
+	}
+	return
 }
 
 // Similar to io.MultiWriter, but we have access to its internals and it has a Close method.
