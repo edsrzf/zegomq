@@ -67,20 +67,20 @@ func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
 	var r reader
 	var w *frameWriter
 	switch typ {
-	case SOCK_PAIR:
 	case SOCK_PUB:
 		mw := newMultiWriter()
 		w = newFrameWriter(mw)
 	case SOCK_SUB:
 		r = newQueuedReader()
-	case SOCK_REQ:
-	case SOCK_REP:
 	case SOCK_PULL:
 		r = newQueuedReader()
 	case SOCK_PUSH:
 		lbw := newLbWriter()
 		w = newFrameWriter(lbw)
+	case SOCK_PAIR, SOCK_REQ, SOCK_REP:
+		fallthrough
 	default:
+		return nil, os.NewError("socket type unimplemented")
 	}
 	return &Socket{c, identity, r, w}, nil
 }
