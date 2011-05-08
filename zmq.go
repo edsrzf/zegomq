@@ -49,11 +49,32 @@ type bindWriter interface {
 }
 
 type Context struct {
-
+	endpoints map[string]net.Conn
+	epLock sync.Mutex
 }
 
 func NewContext() (*Context, os.Error) {
-	return &Context{}, nil
+	return &Context{endpoints: map[string]net.Conn{}}, nil
+}
+
+func (c *Context) registerEndpoint(name string) (net.Conn, os.Error) {
+	c1, c2 := net.Pipe()
+	c.epLock.Lock()
+	defer c.epLock.Unlock()
+	if _, ok := c.endpoints[name]; ok {
+		return nil, os.NewError("endpoint already exists")
+	}
+	c.endpoints[name] = c2
+	return c1, nil
+}
+
+func (c *Context) findEndpoint(name string) (net.Conn, os.Error) {
+	c.epLock.Lock()
+	defer c.epLock.Unlock()
+	if conn, ok := c.endpoints[name]; ok {
+		return conn, nil
+	}
+	return nil, os.NewError("endpoint does not exist")
 }
 
 type Socket struct {
@@ -106,6 +127,8 @@ func (s *Socket) Connect(addr string) os.Error {
 	}
 	var conn net.Conn
 	switch url.Scheme {
+	case "inproc":
+		conn, err = s.c.findEndpoint(url.Host+url.Path)
 	case "ipc":
 		conn, err = net.Dial("unix", url.Host+url.Path)
 	case "tcp":
