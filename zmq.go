@@ -3,11 +3,11 @@ package zmq
 import (
 	"bufio"
 	"encoding/binary"
-	"http"
 	"io"
 	"io/ioutil"
 	"net"
 	"os"
+	"strings"
 	"sync"
 )
 
@@ -121,18 +121,20 @@ func (s *Socket) Write(b []byte) (int, os.Error) {
 }
 
 func (s *Socket) Connect(addr string) os.Error {
-	url, err := http.ParseURL(addr)
-	if err != nil {
-		return err
+	url := strings.Split(addr, "://", 2)
+	if len(url) != 2 {
+		return os.NewError("invalid address")
 	}
+	scheme, path := url[0], url[1]
 	var conn net.Conn
-	switch url.Scheme {
+	var err os.Error
+	switch scheme {
 	case "inproc":
-		conn, err = s.c.findEndpoint(url.Host+url.Path)
+		conn, err = s.c.findEndpoint(path)
 	case "ipc":
-		conn, err = net.Dial("unix", url.Host+url.Path)
+		conn, err = net.Dial("unix", path)
 	case "tcp":
-		conn, err = net.Dial("tcp", url.Host)
+		conn, err = net.Dial("tcp", path)
 	default:
 		err = os.NewError("unsupported URL scheme")
 	}
