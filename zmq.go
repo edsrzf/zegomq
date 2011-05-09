@@ -277,51 +277,51 @@ type Msg struct {
 }
 
 func newMsg(buf *bufio.Reader, lock *sync.Mutex) (*Msg, os.Error) {
-	r := &Msg{buf: buf, lock: lock}
-	err := r.readHeader()
-	return r, err
+	m := &Msg{buf: buf, lock: lock}
+	err := m.readHeader()
+	return m, err
 }
 
-func (r *Msg) readHeader() os.Error {
+func (m *Msg) readHeader() os.Error {
 	var b [8]byte
-	if _, err := r.buf.Read(b[:1]); err != nil {
+	if _, err := m.buf.Read(b[:1]); err != nil {
 		return err
 	}
 	if b[0] == 255 {
-		if _, err := r.buf.Read(b[:]); err != nil {
+		if _, err := m.buf.Read(b[:]); err != nil {
 			return err
 		}
-		r.length = binary.BigEndian.Uint64(b[:])
+		m.length = binary.BigEndian.Uint64(b[:])
 	} else {
-		r.length = uint64(b[0])
+		m.length = uint64(b[0])
 	}
-	r.length--
-	flags, err := r.buf.ReadByte()
+	m.length--
+	flags, err := m.buf.ReadByte()
 	if err != nil {
 		return err
 	}
-	r.more = flags&flagMore != 0
+	m.more = flags&flagMore != 0
 	return nil
 }
 
-func (r *Msg) Read(b []byte) (n int, err os.Error) {
-	if r.length == 0 && !r.more {
+func (m *Msg) Read(b []byte) (n int, err os.Error) {
+	if m.length == 0 && !m.more {
 		return 0, os.EOF
 	}
 	for n < len(b) {
 		l := uint64(len(b) - n)
-		if r.length < l {
-			l = r.length
+		if m.length < l {
+			l = m.length
 		}
-		nn, err := r.buf.Read(b[n : n+int(l)])
+		nn, err := m.buf.Read(b[n : n+int(l)])
 		n += nn
-		r.length -= uint64(nn)
+		m.length -= uint64(nn)
 		if err != nil {
 			return n, err
 		}
-		if r.length == 0 {
-			if r.more {
-				r.readHeader()
+		if m.length == 0 {
+			if m.more {
+				m.readHeader()
 			} else {
 				return n, os.EOF
 			}
@@ -331,26 +331,26 @@ func (r *Msg) Read(b []byte) (n int, err os.Error) {
 }
 
 // discard reads the rest of the data off the wire.
-func (r *Msg) discard() {
-	io.Copy(ioutil.Discard, r)
+func (m *Msg) discard() {
+	io.Copy(ioutil.Discard, m)
 }
 
 const maxInt = int(^uint(0)/2)
 
 // Len returns the message's length. If the length is unknown or too large for an int to
 // hold, Len returns -1.
-func (r *Msg) Len() int {
-	if r.more || r.length > uint64(maxInt) {
+func (m *Msg) Len() int {
+	if m.more || m.length > uint64(maxInt) {
 		return -1
 	}
-	return int(r.length)
+	return int(m.length)
 }
 
 // Close unlocks the associated Socket so that another message can be read,
 // discarding any unread data.
-func (r *Msg) Close() os.Error {
-	r.discard()
-	r.lock.Unlock()
+func (m *Msg) Close() os.Error {
+	m.discard()
+	m.lock.Unlock()
 	return nil
 }
 
