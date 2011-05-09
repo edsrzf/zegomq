@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -94,7 +95,10 @@ func TestIpc(t *testing.T) {
 	if err := pull.Connect("ipc://ipc_test"); err != nil {
 		t.Fatalf("Error connecting: %s", err)
 	}
-	push.Write([]byte("hello"))
+
+	if _, err := push.Write([]byte("hello")); err != nil {
+		t.Fatalf("Error writing message: %s", err)
+	}
 	msg, err := pull.RecvMsg()
 	if err != nil {
 		t.Fatalf("Error receiving message: %s", err)
@@ -109,4 +113,25 @@ func TestIpc(t *testing.T) {
 	if string(b) != "hello" {
 		t.Fatalf("Wrong Msg content: %s", b)
 	}
+	msg.Close()
+
+	reader := strings.NewReader("hello")
+	if _, err := push.ReadFrom(reader); err != nil {
+		t.Fatalf("ReadFrom error: %s", err)
+	}
+	msg, err = pull.RecvMsg()
+	if err != nil {
+		t.Fatalf("Error receiving message: %s", err)
+	}
+	if msg.Len() != 5 {
+		t.Fatalf("Msg 2 has wrong length: %d", msg.Len())
+	}
+	b = make([]byte, msg.Len())
+	if _, err := msg.Read(b); err != nil && err != os.EOF {
+		t.Fatalf("Error reading Msg: %s", err)
+	}
+	if string(b) != "hello" {
+		t.Fatalf("Wrong Msg content: %s", b)
+	}
+	msg.Close()
 }

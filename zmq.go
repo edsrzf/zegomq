@@ -241,12 +241,20 @@ func (fw *frameWriter) write(b []byte, flags byte) (n int, err os.Error) {
 }
 
 func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
-	// same size as io.Copy + header
-	buf := make([]byte, 32*1024)
+	// use two buffers the same size as in io.Copy
+	// We need two because we need to know before we send the first buffer
+	// whether or not the second one will complete in order to set the flags.
+	buf := make([]byte, 2*32*1024)
+	buf1 := buf[:32*1024]
+	buf2 := buf[32*1024:2*32*1024]
+
 	flags := byte(flagMore)
-	for {
-		nn, err := r.Read(buf)
-		n += int64(nn)
+	nn, err := r.Read(buf1)
+	if err != nil && err != os.EOF {
+		return n, err
+	}
+	for flags != 0 {
+		nnn, err := r.Read(buf2)
 		if err != nil {
 			if err == os.EOF {
 				flags = 0
@@ -254,7 +262,10 @@ func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
 				return n, err
 			}
 		}
+		n += int64(nn)
 		fw.write(buf[:nn], flags)
+		nn = nnn
+		buf1, buf2 = buf2, buf1
 	}
 	return
 }
