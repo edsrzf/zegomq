@@ -55,7 +55,15 @@ func (s *Socket) Write(b []byte) (int, os.Error) {
 	if s.w == nil {
 		return 0, os.NewError("socket is not writable")
 	}
-	return s.w.Write(b)
+	return s.w.write(b, 0)
+}
+
+// ReadFrom reads data from r until EOF and sends it as a single Msg.
+func (s *Socket) ReadFrom(r io.Reader) (n int64, err os.Error) {
+	if s.w == nil {
+		return 0, os.NewError("socket is not writable")
+	}
+	return s.w.ReadFrom(r)
 }
 
 // Connect adds a new endpoint to the Socket.

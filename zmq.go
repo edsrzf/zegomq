@@ -211,11 +211,11 @@ func (fw *frameWriter) sendIdentity(id string) os.Error {
 	if id != "" {
 		b = []byte(id)
 	}
-	_, err := fw.Write(b)
+	_, err := fw.write(b, 0)
 	return err
 }
 
-func (fw *frameWriter) Write(b []byte) (n int, err os.Error) {
+func (fw *frameWriter) write(b []byte, flags byte) (n int, err os.Error) {
 	// + 1 for flags
 	l := len(b) + 1
 	if l < 255 {
@@ -229,16 +229,33 @@ func (fw *frameWriter) Write(b []byte) (n int, err os.Error) {
 	if err != nil {
 		return
 	}
-	// flags; it’s impossible to have a slice with len > 2^64-1, so the MORE flag is always 0
-	// All other flag bits are reserved.
-	nn, err := fw.buf.Write([]byte{0})
-	n += nn
+	err = fw.buf.WriteByte(flags)
 	if err != nil {
 		return
 	}
-	nn, err = fw.buf.Write(b)
+	n++
+	nn, err := fw.buf.Write(b)
 	n += nn
 	fw.buf.Flush()
+	return
+}
+
+func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
+	// same size as io.Copy + header
+	buf := make([]byte, 32*1024)
+	flags := byte(flagMore)
+	for {
+		nn, err := r.Read(buf)
+		n += int64(nn)
+		if err != nil {
+			if err == os.EOF {
+				flags = 0
+			} else {
+				return n, err
+			}
+		}
+		fw.write(buf[:nn], flags)
+	}
 	return
 }
 
