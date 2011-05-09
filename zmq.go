@@ -37,7 +37,7 @@ func (b nilRAdder) addConn(fr *frameReader) {}
 
 type reader interface {
 	addConn(fr *frameReader)
-	RecvMsg() (io.ReadCloser, os.Error)
+	RecvMsg() (*MsgReader, os.Error)
 	Close() os.Error
 }
 
@@ -154,11 +154,11 @@ func (w *lbWriter) Close() os.Error {
 
 type queuedReader struct {
 	fr []*frameReader
-	c  chan io.ReadCloser
+	c  chan *MsgReader
 }
 
 func newQueuedReader() *queuedReader {
-	c := make(chan io.ReadCloser, 10)
+	c := make(chan *MsgReader, 10)
 	return &queuedReader{nil, c}
 }
 
@@ -168,7 +168,7 @@ func (r *queuedReader) addConn(fr *frameReader) {
 	r.fr = append(r.fr, fr)
 }
 
-func readListen(fr *frameReader, c chan io.ReadCloser) {
+func readListen(fr *frameReader, c chan *MsgReader) {
 	for {
 		mr, err := fr.RecvMsg()
 		if err != nil {
@@ -178,7 +178,7 @@ func readListen(fr *frameReader, c chan io.ReadCloser) {
 	}
 }
 
-func (r *queuedReader) RecvMsg() (io.ReadCloser, os.Error) {
+func (r *queuedReader) RecvMsg() (*MsgReader, os.Error) {
 	mr := <-r.c
 	return mr, nil
 }
@@ -243,20 +243,20 @@ type frameReader struct {
 	buf  *bufio.Reader
 }
 
-type msgReader struct {
+type MsgReader struct {
 	length uint64 // length of the current frame
 	more   bool   // whether there are more frames after this one
 	buf    *bufio.Reader
 	lock   *sync.Mutex
 }
 
-func newMsgReader(buf *bufio.Reader, lock *sync.Mutex) (*msgReader, os.Error) {
-	r := &msgReader{buf: buf, lock: lock}
+func newMsgReader(buf *bufio.Reader, lock *sync.Mutex) (*MsgReader, os.Error) {
+	r := &MsgReader{buf: buf, lock: lock}
 	err := r.readHeader()
 	return r, err
 }
 
-func (r *msgReader) readHeader() os.Error {
+func (r *MsgReader) readHeader() os.Error {
 	var b [8]byte
 	if _, err := r.buf.Read(b[:1]); err != nil {
 		return err
@@ -278,7 +278,7 @@ func (r *msgReader) readHeader() os.Error {
 	return nil
 }
 
-func (r *msgReader) Read(b []byte) (n int, err os.Error) {
+func (r *MsgReader) Read(b []byte) (n int, err os.Error) {
 	for n < len(b) {
 		l := uint64(len(b) - n)
 		if r.length < l {
@@ -301,7 +301,7 @@ func (r *msgReader) Read(b []byte) (n int, err os.Error) {
 	return
 }
 
-func (r *msgReader) Close() os.Error {
+func (r *MsgReader) Close() os.Error {
 	r.lock.Unlock()
 	return nil
 }
@@ -311,7 +311,7 @@ func newFrameReader(rc io.ReadCloser) *frameReader {
 	return r
 }
 
-func (fr *frameReader) RecvMsg() (io.ReadCloser, os.Error) {
+func (fr *frameReader) RecvMsg() (*MsgReader, os.Error) {
 	fr.lock.Lock()
 	return newMsgReader(fr.buf, &fr.lock)
 }

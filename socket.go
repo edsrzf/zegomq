@@ -37,7 +37,7 @@ func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
 	return &Socket{c, identity, r, w}, nil
 }
 
-func (s *Socket) RecvMsg() (io.ReadCloser, os.Error) {
+func (s *Socket) RecvMsg() (*MsgReader, os.Error) {
 	if s.r == nil {
 		return nil, os.NewError("socket is not readable")
 	}
