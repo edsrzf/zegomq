@@ -7,17 +7,29 @@ import (
 	"strings"
 )
 
+const (
+	SOCK_PAIR = iota
+	SOCK_PUB
+	SOCK_SUB
+	SOCK_REQ
+	SOCK_REP
+	//SOCK_XREQ
+	//SOCK_XREP
+	SOCK_PULL
+	SOCK_PUSH
+)
+
 type Socket struct {
 	c        *Context
 	identity string
-	r        reader
+	r        readerPool
 	w        *frameWriter
 }
 
 // NewSocket creates a new Socket within the Context c.
 // Initially the Socket is not associated with any endpoints.
 func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
-	var r reader
+	var r readerPool
 	var w *frameWriter
 	switch typ {
 	case SOCK_PUB:

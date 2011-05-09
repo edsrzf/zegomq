@@ -16,19 +16,7 @@ const (
 	flagMore = 1
 )
 
-const (
-	SOCK_PAIR = iota
-	SOCK_PUB
-	SOCK_SUB
-	SOCK_REQ
-	SOCK_REP
-	//SOCK_XREQ
-	//SOCK_XREP
-	SOCK_PULL
-	SOCK_PUSH
-)
-
-type nilWAdder struct {
+type nilWAdder struct{
 	net.Conn
 }
 
@@ -38,13 +26,13 @@ type nilRAdder struct{}
 
 func (b nilRAdder) addConn(fr *frameReader) {}
 
-type reader interface {
+type readerPool interface {
 	addConn(fr *frameReader)
 	RecvMsg() (*Msg, os.Error)
 	Close() os.Error
 }
 
-type bindWriter interface {
+type writerPool interface {
 	io.WriteCloser
 	addConn(wc io.WriteCloser)
 }
@@ -209,11 +197,11 @@ func (r *queuedReader) Close() os.Error {
 }
 
 type frameWriter struct {
-	bindWriter
+	writerPool
 	buf *bufio.Writer
 }
 
-func newFrameWriter(wc bindWriter) *frameWriter {
+func newFrameWriter(wc writerPool) *frameWriter {
 	w := &frameWriter{wc, bufio.NewWriter(wc)}
 	return w
 }
