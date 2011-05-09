@@ -1,3 +1,5 @@
+// Package zmq implements the ØMQ socket types and wire protocol.
+// For more information, see http://zeromq.org.
 package zmq
 
 import (
@@ -46,11 +48,15 @@ type bindWriter interface {
 	addConn(wc io.WriteCloser)
 }
 
+// A Context is a container for sockets and manages in-process communications.
+// Contexts are thread safe and may be shared between goroutines without
+// synchronization.
 type Context struct {
 	endpoints map[string]net.Conn
 	epLock sync.Mutex
 }
 
+// NewContext returns a new context.
 func NewContext() (*Context, os.Error) {
 	return &Context{endpoints: map[string]net.Conn{}}, nil
 }
@@ -109,7 +115,7 @@ func (mw *multiWriter) addConn(wc io.WriteCloser) {
 	*mw = append(*mw, wc)
 }
 
-// A load-balanced WriteCloser
+// a load-balanced WriteCloser
 type lbWriter struct {
 	w []io.WriteCloser
 	c chan []byte
@@ -243,6 +249,8 @@ type frameReader struct {
 	buf  *bufio.Reader
 }
 
+// A Msg represents a ØMQ message. Only one Msg from an endpoint can be
+// active at a time. The caller must Close the Msg when finished with it.
 type Msg struct {
 	length uint64 // length of the current frame
 	more   bool   // whether there are more frames after this one
@@ -312,6 +320,8 @@ func (r *Msg) Len() int {
 	return int(r.length)
 }
 
+// Close unlocks the associated Socket so that another message can be read,
+// discarding any unread data.
 func (r *Msg) Close() os.Error {
 	r.lock.Unlock()
 	return nil
