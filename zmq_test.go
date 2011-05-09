@@ -46,7 +46,7 @@ func (c *msgConn) Read(b []byte) (int, os.Error) {
 }
 
 type msgTest struct {
-	lengths []uint64
+	lengths       []uint64
 	initialLength int
 }
 

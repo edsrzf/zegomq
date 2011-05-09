@@ -16,7 +16,7 @@ const (
 	flagMore = 1
 )
 
-type nilWAdder struct{
+type nilWAdder struct {
 	net.Conn
 }
 
@@ -42,7 +42,7 @@ type writerPool interface {
 // synchronization.
 type Context struct {
 	endpoints map[string]net.Conn
-	epLock sync.Mutex
+	epLock    sync.Mutex
 }
 
 // NewContext returns a new context.
@@ -71,8 +71,8 @@ func (c *Context) findEndpoint(name string) (net.Conn, os.Error) {
 }
 
 // Similar to io.MultiWriter, but we have access to its internals and it has a Close method.
-type multiWriter struct{
-	wc []io.WriteCloser
+type multiWriter struct {
+	wc   []io.WriteCloser
 	lock sync.Mutex
 }
 
@@ -154,9 +154,9 @@ func (w *lbWriter) Close() os.Error {
 }
 
 type queuedReader struct {
-	fr []*frameReader
+	fr   []*frameReader
 	lock sync.Mutex
-	c  chan *Msg
+	c    chan *Msg
 }
 
 func newQueuedReader() *queuedReader {
@@ -334,7 +334,7 @@ func (m *Msg) discard() {
 	io.Copy(ioutil.Discard, m)
 }
 
-const maxInt = int(^uint(0)/2)
+const maxInt = int(^uint(0) / 2)
 
 // Len returns the message's length. If the length is unknown or too large for an int to
 // hold, Len returns -1.
