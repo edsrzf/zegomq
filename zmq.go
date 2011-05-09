@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"io"
+	"io/ioutil"
 	"net"
 	"os"
 	"sync"
@@ -304,6 +305,9 @@ func (r *Msg) readHeader() os.Error {
 }
 
 func (r *Msg) Read(b []byte) (n int, err os.Error) {
+	if r.length == 0 && !r.more {
+		return 0, os.EOF
+	}
 	for n < len(b) {
 		l := uint64(len(b) - n)
 		if r.length < l {
@@ -326,6 +330,11 @@ func (r *Msg) Read(b []byte) (n int, err os.Error) {
 	return
 }
 
+// discard reads the rest of the data off the wire.
+func (r *Msg) discard() {
+	io.Copy(ioutil.Discard, r)
+}
+
 const maxInt = int(^uint(0)/2)
 
 // Len returns the message's length. If the length is unknown or too large for an int to
@@ -340,6 +349,7 @@ func (r *Msg) Len() int {
 // Close unlocks the associated Socket so that another message can be read,
 // discarding any unread data.
 func (r *Msg) Close() os.Error {
+	r.discard()
 	r.lock.Unlock()
 	return nil
 }

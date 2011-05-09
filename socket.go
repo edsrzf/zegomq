@@ -2,7 +2,6 @@ package zmq
 
 import (
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"strings"
@@ -102,7 +101,6 @@ func (s *Socket) Connect(endpoint string) os.Error {
 	if err != nil {
 		return err
 	}
-	io.Copy(ioutil.Discard, msg)
 	msg.Close()
 
 	if s.w != nil {
