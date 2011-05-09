@@ -209,30 +209,30 @@ func (fw *frameWriter) sendIdentity(id string) os.Error {
 	return err
 }
 
-func (fc *frameWriter) Write(b []byte) (n int, err os.Error) {
+func (fw *frameWriter) Write(b []byte) (n int, err os.Error) {
 	// + 1 for flags
 	l := len(b) + 1
 	if l < 255 {
-		n, err = fc.buf.Write([]byte{byte(l)})
+		n, err = fw.buf.Write([]byte{byte(l)})
 	} else {
 		var length [9]byte
 		length[0] = 255
 		binary.BigEndian.PutUint64(length[1:], uint64(l))
-		n, err = fc.buf.Write(length[:])
+		n, err = fw.buf.Write(length[:])
 	}
 	if err != nil {
 		return
 	}
 	// flags; it’s impossible to have a slice with len > 2^64-1, so the MORE flag is always 0
 	// All other flag bits are reserved.
-	nn, err := fc.buf.Write([]byte{0})
+	nn, err := fw.buf.Write([]byte{0})
 	n += nn
 	if err != nil {
 		return
 	}
-	nn, err = fc.buf.Write(b)
+	nn, err = fw.buf.Write(b)
 	n += nn
-	fc.buf.Flush()
+	fw.buf.Flush()
 	return
 }
 
