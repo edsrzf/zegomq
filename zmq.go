@@ -58,8 +58,8 @@ type Context struct {
 }
 
 // NewContext returns a new context.
-func NewContext() (*Context, os.Error) {
-	return &Context{endpoints: map[string]net.Conn{}}, nil
+func NewContext() *Context {
+	return &Context{endpoints: map[string]net.Conn{}}
 }
 
 func (c *Context) registerEndpoint(name string) (net.Conn, os.Error) {
@@ -83,54 +83,60 @@ func (c *Context) findEndpoint(name string) (net.Conn, os.Error) {
 }
 
 // Similar to io.MultiWriter, but we have access to its internals and it has a Close method.
-type multiWriter []io.WriteCloser
-
-func newMultiWriter() *multiWriter {
-	mw := make(multiWriter, 0, 5)
-	return &mw
+type multiWriter struct{
+	wc []io.WriteCloser
+	lock sync.Mutex
 }
 
-func (mw *multiWriter) Write(p []byte) (n int, err os.Error) {
-	n = len(p)
-	for _, w := range *mw {
-		n2, err2 := w.Write(p)
+func newMultiWriter() *multiWriter {
+	wc := make([]io.WriteCloser, 0, 5)
+	return &multiWriter{wc: wc}
+}
+
+func (mw *multiWriter) Write(b []byte) (n int, err os.Error) {
+	n = len(b)
+	mw.lock.Lock()
+	for _, w := range mw.wc {
+		n2, err2 := w.Write(b)
 		if err2 != nil {
 			n = n2
 			err = err2
 		}
 	}
+	mw.lock.Unlock()
 	return
 }
 
 func (mw *multiWriter) Close() (err os.Error) {
-	for _, w := range *mw {
+	mw.lock.Lock()
+	for _, w := range mw.wc {
 		err2 := w.Close()
 		if err2 != nil {
 			err = err2
 		}
 	}
+	mw.lock.Unlock()
 	return
 }
 
 func (mw *multiWriter) addConn(wc io.WriteCloser) {
-	*mw = append(*mw, wc)
+	mw.lock.Lock()
+	mw.wc = append(mw.wc, wc)
+	mw.lock.Unlock()
 }
 
 // a load-balanced WriteCloser
 type lbWriter struct {
-	w []io.WriteCloser
 	c chan []byte
 }
 
 func newLbWriter() *lbWriter {
 	c := make(chan []byte, 10)
-	return &lbWriter{nil, c}
+	return &lbWriter{c}
 }
 
 func (w *lbWriter) addConn(wc io.WriteCloser) {
 	go writeListen(wc, w.c)
-	// TODO: figure out a better way to keep track of writers
-	w.w = append(w.w, wc)
 }
 
 func writeListen(w io.WriteCloser, c chan []byte) {
@@ -161,18 +167,21 @@ func (w *lbWriter) Close() os.Error {
 
 type queuedReader struct {
 	fr []*frameReader
+	lock sync.Mutex
 	c  chan *Msg
 }
 
 func newQueuedReader() *queuedReader {
 	c := make(chan *Msg, 10)
-	return &queuedReader{nil, c}
+	return &queuedReader{c: c}
 }
 
 func (r *queuedReader) addConn(fr *frameReader) {
 	go readListen(fr, r.c)
 	// TODO: figure out a better way to keep track of readers
+	r.lock.Lock()
 	r.fr = append(r.fr, fr)
+	r.lock.Unlock()
 }
 
 func readListen(fr *frameReader, c chan *Msg) {
@@ -191,9 +200,11 @@ func (r *queuedReader) RecvMsg() (*Msg, os.Error) {
 }
 
 func (r *queuedReader) Close() os.Error {
+	r.lock.Lock()
 	for _, r := range r.fr {
 		r.Close()
 	}
+	r.lock.Unlock()
 	return nil
 }
 

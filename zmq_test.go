@@ -80,3 +80,33 @@ func TestMsgLen(t *testing.T) {
 		}
 	}
 }
+
+func TestIpc(t *testing.T) {
+	c := NewContext()
+	push, _ := c.NewSocket(SOCK_PUSH, "push")
+	defer os.Remove("ipc_test")
+	defer push.Close()
+	pull, _ := c.NewSocket(SOCK_PULL, "pull")
+	defer pull.Close()
+	if err := push.Bind("ipc://ipc_test"); err != nil {
+		t.Fatalf("Error binding: %s", err)
+	}
+	if err := pull.Connect("ipc://ipc_test"); err != nil {
+		t.Fatalf("Error connecting: %s", err)
+	}
+	push.Write([]byte("hello"))
+	msg, err := pull.RecvMsg()
+	if err != nil {
+		t.Fatalf("Error receiving message: %s", err)
+	}
+	if msg.Len() != 5 {
+		t.Fatalf("Msg has wrong length: %d", msg.Len())
+	}
+	b := make([]byte, msg.Len())
+	if _, err := msg.Read(b); err != nil && err != os.EOF {
+		t.Fatalf("Error reading Msg: %s", err)
+	}
+	if string(b) != "hello" {
+		t.Fatalf("Wrong Msg content: %s", b)
+	}
+}
