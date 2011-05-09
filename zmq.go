@@ -301,6 +301,17 @@ func (r *MsgReader) Read(b []byte) (n int, err os.Error) {
 	return
 }
 
+const maxInt = int(^uint(0)/2)
+
+// Len returns the message's length. If the length is unknown or too large for an int to
+// hold, Len returns -1.
+func (r *MsgReader) Len() int {
+	if r.more || r.length > uint64(maxInt) {
+		return -1
+	}
+	return int(r.length)
+}
+
 func (r *MsgReader) Close() os.Error {
 	r.lock.Unlock()
 	return nil
