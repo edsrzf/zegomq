@@ -65,6 +65,45 @@ func (s *Socket) ReadFrom(r io.Reader) (n int64, err os.Error) {
 	return s.w.ReadFrom(r)
 }
 
+func parseEndpoint(endpoint string) (transport string, addr string, err os.Error) {
+	url := strings.Split(endpoint, "://", 2)
+	if len(url) != 2 {
+		err = os.NewError("invalid address")
+		return
+	}
+	transport, addr = url[0], url[1]
+	return
+}
+
+func (s *Socket) Bind(endpoint string) os.Error {
+	transport, addr, err := parseEndpoint(endpoint)
+	if err != nil {
+		return err
+	}
+	var listener net.Listener
+	switch transport {
+	case "ipc":
+		listener, err = net.Listen("unix", addr)
+	case "tcp":
+		listener, err = net.Listen("tcp", addr)
+	default:
+		err = os.NewError("unsupported transport")
+	}
+	if err != nil {
+		return err
+	}
+	go s.listen(listener)
+	return nil
+}
+
+func (s *Socket) listen(listener net.Listener) {
+	conn, err := listener.Accept()
+	if err != nil {
+		return
+	}
+	s.addConn(conn)
+}
+
 // Connect adds a new endpoint to the Socket.
 // The endpoint is a string of the form "transport://address".
 // The following transports are available:
@@ -72,13 +111,11 @@ func (s *Socket) ReadFrom(r io.Reader) (n int64, err os.Error) {
 //	ipc, local inter-process communication
 //	tcp, unicast transport using TCP
 func (s *Socket) Connect(endpoint string) os.Error {
-	url := strings.Split(endpoint, "://", 2)
-	if len(url) != 2 {
-		return os.NewError("invalid address")
+	transport, addr, err := parseEndpoint(endpoint)
+	if err != nil {
+		return err
 	}
-	transport, addr := url[0], url[1]
 	var conn net.Conn
-	var err os.Error
 	switch transport {
 	case "inproc":
 		conn, err = s.c.findEndpoint(addr)
@@ -87,11 +124,15 @@ func (s *Socket) Connect(endpoint string) os.Error {
 	case "tcp":
 		conn, err = net.Dial("tcp", addr)
 	default:
-		err = os.NewError("unsupported URL scheme")
+		err = os.NewError("unsupported transport")
 	}
 	if err != nil {
 		return err
 	}
+	return s.addConn(conn)
+}
+
+func (s *Socket) addConn(conn net.Conn) os.Error {
 	// TODO: avoid making extra frameWriters and frameReaders
 	fw := newFrameWriter(nilWAdder{conn})
 	fw.sendIdentity(s.identity)
