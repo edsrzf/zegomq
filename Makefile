@@ -6,6 +6,7 @@ include $(GOROOT)/src/Make.inc
 
 TARG=github.com/edsrzf/zegomq
 GOFILES=\
+	socket.go\
 	zmq.go\
 
 include $(GOROOT)/src/Make.pkg
