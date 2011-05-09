@@ -37,7 +37,7 @@ func (b nilRAdder) addConn(fr *frameReader) {}
 
 type reader interface {
 	addConn(fr *frameReader)
-	RecvMsg() (*MsgReader, os.Error)
+	RecvMsg() (*Msg, os.Error)
 	Close() os.Error
 }
 
@@ -154,11 +154,11 @@ func (w *lbWriter) Close() os.Error {
 
 type queuedReader struct {
 	fr []*frameReader
-	c  chan *MsgReader
+	c  chan *Msg
 }
 
 func newQueuedReader() *queuedReader {
-	c := make(chan *MsgReader, 10)
+	c := make(chan *Msg, 10)
 	return &queuedReader{nil, c}
 }
 
@@ -168,7 +168,7 @@ func (r *queuedReader) addConn(fr *frameReader) {
 	r.fr = append(r.fr, fr)
 }
 
-func readListen(fr *frameReader, c chan *MsgReader) {
+func readListen(fr *frameReader, c chan *Msg) {
 	for {
 		mr, err := fr.RecvMsg()
 		if err != nil {
@@ -178,7 +178,7 @@ func readListen(fr *frameReader, c chan *MsgReader) {
 	}
 }
 
-func (r *queuedReader) RecvMsg() (*MsgReader, os.Error) {
+func (r *queuedReader) RecvMsg() (*Msg, os.Error) {
 	mr := <-r.c
 	return mr, nil
 }
@@ -243,20 +243,20 @@ type frameReader struct {
 	buf  *bufio.Reader
 }
 
-type MsgReader struct {
+type Msg struct {
 	length uint64 // length of the current frame
 	more   bool   // whether there are more frames after this one
 	buf    *bufio.Reader
 	lock   *sync.Mutex
 }
 
-func newMsgReader(buf *bufio.Reader, lock *sync.Mutex) (*MsgReader, os.Error) {
-	r := &MsgReader{buf: buf, lock: lock}
+func newMsg(buf *bufio.Reader, lock *sync.Mutex) (*Msg, os.Error) {
+	r := &Msg{buf: buf, lock: lock}
 	err := r.readHeader()
 	return r, err
 }
 
-func (r *MsgReader) readHeader() os.Error {
+func (r *Msg) readHeader() os.Error {
 	var b [8]byte
 	if _, err := r.buf.Read(b[:1]); err != nil {
 		return err
@@ -278,7 +278,7 @@ func (r *MsgReader) readHeader() os.Error {
 	return nil
 }
 
-func (r *MsgReader) Read(b []byte) (n int, err os.Error) {
+func (r *Msg) Read(b []byte) (n int, err os.Error) {
 	for n < len(b) {
 		l := uint64(len(b) - n)
 		if r.length < l {
@@ -305,14 +305,14 @@ const maxInt = int(^uint(0)/2)
 
 // Len returns the message's length. If the length is unknown or too large for an int to
 // hold, Len returns -1.
-func (r *MsgReader) Len() int {
+func (r *Msg) Len() int {
 	if r.more || r.length > uint64(maxInt) {
 		return -1
 	}
 	return int(r.length)
 }
 
-func (r *MsgReader) Close() os.Error {
+func (r *Msg) Close() os.Error {
 	r.lock.Unlock()
 	return nil
 }
@@ -322,9 +322,9 @@ func newFrameReader(rc io.ReadCloser) *frameReader {
 	return r
 }
 
-func (fr *frameReader) RecvMsg() (*MsgReader, os.Error) {
+func (fr *frameReader) RecvMsg() (*Msg, os.Error) {
 	fr.lock.Lock()
-	return newMsgReader(fr.buf, &fr.lock)
+	return newMsg(fr.buf, &fr.lock)
 }
 
 func (fr *frameReader) Close() os.Error {
