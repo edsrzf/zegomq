@@ -99,38 +99,23 @@ func TestIpc(t *testing.T) {
 	if _, err := push.Write([]byte("hello")); err != nil {
 		t.Fatalf("Error writing message: %s", err)
 	}
-	msg, err := pull.RecvMsg()
+	msg, err := pull.ReadMsg()
 	if err != nil {
 		t.Fatalf("Error receiving message: %s", err)
 	}
-	if msg.Len() != 5 {
-		t.Fatalf("Msg has wrong length: %d", msg.Len())
-	}
-	b, err := msg.ReadAll()
-	if err != nil && err != os.EOF {
-		t.Fatalf("Error reading Msg: %s", err)
-	}
-	if string(b) != "hello" {
-		t.Fatalf("Wrong Msg content: %s", b)
+	if string(msg) != "hello" {
+		t.Fatalf("Wrong message content: %s", msg)
 	}
 
 	reader := strings.NewReader("hello")
 	if _, err := push.ReadFrom(reader); err != nil {
 		t.Fatalf("ReadFrom error: %s", err)
 	}
-	msg, err = pull.RecvMsg()
+	msg, err = pull.ReadMsg()
 	if err != nil {
-		t.Fatalf("Error receiving message: %s", err)
+		t.Fatalf("Error receiving message 2: %s", err)
 	}
-	if msg.Len() != 5 {
-		t.Fatalf("Msg 2 has wrong length: %d", msg.Len())
+	if string(msg) != "hello" {
+		t.Fatalf("Wrong message 2 content: %s", msg)
 	}
-	b, err = msg.ReadAll()
-	if err != nil && err != os.EOF {
-		t.Fatalf("Error reading Msg: %s", err)
-	}
-	if string(b) != "hello" {
-		t.Fatalf("Wrong Msg content: %s", b)
-	}
-	msg.Close()
 }

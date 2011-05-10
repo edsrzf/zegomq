@@ -50,6 +50,16 @@ func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
 	return &Socket{c, identity, r, w}, nil
 }
 
+// Read reads an entire message from the socket into memory.
+// It is best to use this method when messages are known to be fairly small.
+func (s *Socket) ReadMsg() ([]byte, os.Error) {
+	msg, err := s.RecvMsg()
+	if err != nil {
+		return nil, err
+	}
+	return msg.readAll()
+}
+
 // RecvMsg returns the next message from the Socket.
 // If there is no Msg available, this call will block until there is one.
 // If the next Msg comes from an endpoint with an already active Msg,

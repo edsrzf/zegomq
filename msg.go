@@ -72,9 +72,9 @@ func (m *Msg) Read(b []byte) (n int, err os.Error) {
 	return
 }
 
-// ReadAll attempts to read the entire Msg. When it is finished, the Msg is
+// readAll attempts to read the entire Msg. When it is finished, the Msg is
 // fully consumed and closed, even if there was an error.
-func (m *Msg) ReadAll() (buf []byte, err os.Error) {
+func (m *Msg) readAll() (buf []byte, err os.Error) {
 	defer m.Close()
 	for m.length > 0 || m.more {
 		// we're making some assumptions about the runtime's implementation of
@@ -88,8 +88,11 @@ func (m *Msg) ReadAll() (buf []byte, err os.Error) {
 		buf = make([]byte, n+int(m.length))
 		copy(buf, old)
 		if _, err = m.Read(buf[n:]); err != nil {
-			return
+			break
 		}
+	}
+	if err == os.EOF {
+		err = nil
 	}
 	return
 }
