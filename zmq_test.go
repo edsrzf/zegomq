@@ -106,14 +106,13 @@ func TestIpc(t *testing.T) {
 	if msg.Len() != 5 {
 		t.Fatalf("Msg has wrong length: %d", msg.Len())
 	}
-	b := make([]byte, msg.Len())
-	if _, err := msg.Read(b); err != nil && err != os.EOF {
+	b, err := msg.ReadAll()
+	if err != nil && err != os.EOF {
 		t.Fatalf("Error reading Msg: %s", err)
 	}
 	if string(b) != "hello" {
 		t.Fatalf("Wrong Msg content: %s", b)
 	}
-	msg.Close()
 
 	reader := strings.NewReader("hello")
 	if _, err := push.ReadFrom(reader); err != nil {
@@ -126,8 +125,8 @@ func TestIpc(t *testing.T) {
 	if msg.Len() != 5 {
 		t.Fatalf("Msg 2 has wrong length: %d", msg.Len())
 	}
-	b = make([]byte, msg.Len())
-	if _, err := msg.Read(b); err != nil && err != os.EOF {
+	b, err = msg.ReadAll()
+	if err != nil && err != os.EOF {
 		t.Fatalf("Error reading Msg: %s", err)
 	}
 	if string(b) != "hello" {

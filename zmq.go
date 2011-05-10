@@ -246,7 +246,7 @@ func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
 	// whether or not the second one will complete in order to set the flags.
 	buf := make([]byte, 2*32*1024)
 	buf1 := buf[:32*1024]
-	buf2 := buf[32*1024:2*32*1024]
+	buf2 := buf[32*1024 : 2*32*1024]
 
 	flags := byte(flagMore)
 	nn, err := r.Read(buf1)
@@ -335,6 +335,28 @@ func (m *Msg) Read(b []byte) (n int, err os.Error) {
 			} else {
 				return n, os.EOF
 			}
+		}
+	}
+	return
+}
+
+// ReadAll attempts to read the entire Msg. When it is finished, the Msg is
+// fully consumed and closed, even if there was an error.
+func (m *Msg) ReadAll() (buf []byte, err os.Error) {
+	defer m.Close()
+	for m.length > 0 || m.more {
+		// we're making some assumptions about the runtime's implementation of
+		// slices, but they're correct assumptions for the two runtimes so far.
+		if m.length > uint64(maxInt) {
+			err = os.NewError("Msg will not fit in a slice")
+			return
+		}
+		old := buf
+		n := len(buf)
+		buf = make([]byte, n+int(m.length))
+		copy(buf, old)
+		if _, err = m.Read(buf[n:]); err != nil {
+			return
 		}
 	}
 	return
