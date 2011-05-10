@@ -113,7 +113,12 @@ func (m *Msg) Len() int {
 // Close unlocks the associated Socket so that another message can be read,
 // discarding any unread data.
 func (m *Msg) Close() os.Error {
+	if m.lock == nil {
+		return os.NewError("Msg is already closed")
+	}
 	m.discard()
-	m.lock.Unlock()
+	lock := m.lock
+	m.lock = nil
+	lock.Unlock()
 	return nil
 }
