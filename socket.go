@@ -88,7 +88,7 @@ func (s *Socket) ReadFrom(r io.Reader) (n int64, err os.Error) {
 }
 
 func parseEndpoint(endpoint string) (transport string, addr string, err os.Error) {
-	url := strings.Split(endpoint, "://", 2)
+	url := strings.SplitN(endpoint, "://", 2)
 	if len(url) != 2 {
 		err = os.NewError("invalid address")
 		return
