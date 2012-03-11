@@ -3,6 +3,7 @@ package zmq
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"os"
 	"strings"
 	"sync"
@@ -16,11 +17,11 @@ type msgConn struct {
 	buf []byte
 }
 
-func (c *msgConn) Read(b []byte) (int, os.Error) {
+func (c *msgConn) Read(b []byte) (int, error) {
 	n := len(b)
 	if uint64(n) > c.count {
 		if len(c.lengths) == 0 {
-			return 0, os.NewError("read too far")
+			return 0, errors.New("read too far")
 		}
 		n -= int(c.count)
 		c.count = c.lengths[0]
@@ -68,7 +69,7 @@ func makeTestMsg(t *msgTest) *Msg {
 	lock.Lock()
 	msg, err := newMsg(buf, &lock)
 	if err != nil {
-		panic(err.String())
+		panic(err.Error())
 	}
 	return msg
 }

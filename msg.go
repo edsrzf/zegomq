@@ -3,9 +3,9 @@ package zmq
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 	"io/ioutil"
-	"os"
 	"sync"
 )
 
@@ -18,13 +18,13 @@ type Msg struct {
 	lock   *sync.Mutex
 }
 
-func newMsg(buf *bufio.Reader, lock *sync.Mutex) (*Msg, os.Error) {
+func newMsg(buf *bufio.Reader, lock *sync.Mutex) (*Msg, error) {
 	m := &Msg{buf: buf, lock: lock}
 	err := m.readHeader()
 	return m, err
 }
 
-func (m *Msg) readHeader() os.Error {
+func (m *Msg) readHeader() error {
 	var b [8]byte
 	if _, err := m.buf.Read(b[:1]); err != nil {
 		return err
@@ -46,9 +46,9 @@ func (m *Msg) readHeader() os.Error {
 	return nil
 }
 
-func (m *Msg) Read(b []byte) (n int, err os.Error) {
+func (m *Msg) Read(b []byte) (n int, err error) {
 	if m.length == 0 && !m.more {
-		return 0, os.EOF
+		return 0, io.EOF
 	}
 	for n < len(b) {
 		l := uint64(len(b) - n)
@@ -65,7 +65,7 @@ func (m *Msg) Read(b []byte) (n int, err os.Error) {
 			if m.more {
 				m.readHeader()
 			} else {
-				return n, os.EOF
+				return n, io.EOF
 			}
 		}
 	}
@@ -74,13 +74,13 @@ func (m *Msg) Read(b []byte) (n int, err os.Error) {
 
 // readAll attempts to read the entire Msg. When it is finished, the Msg is
 // fully consumed and closed, even if there was an error.
-func (m *Msg) readAll() (buf []byte, err os.Error) {
+func (m *Msg) readAll() (buf []byte, err error) {
 	defer m.Close()
 	for m.length > 0 || m.more {
 		// we're making some assumptions about the runtime's implementation of
 		// slices, but they're correct assumptions for the two runtimes so far.
 		if m.length > uint64(maxInt) {
-			err = os.NewError("Msg will not fit in a slice")
+			err = errors.New("Msg will not fit in a slice")
 			return
 		}
 		old := buf
@@ -91,7 +91,7 @@ func (m *Msg) readAll() (buf []byte, err os.Error) {
 			break
 		}
 	}
-	if err == os.EOF {
+	if err == io.EOF {
 		err = nil
 	}
 	return
@@ -115,9 +115,9 @@ func (m *Msg) Len() int {
 
 // Close unlocks the associated Socket so that another message can be read,
 // discarding any unread data.
-func (m *Msg) Close() os.Error {
+func (m *Msg) Close() error {
 	if m.lock == nil {
-		return os.NewError("Msg is already closed")
+		return errors.New("Msg is already closed")
 	}
 	m.discard()
 	lock := m.lock

@@ -5,9 +5,9 @@ package zmq
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
-	"os"
 	"sync"
 )
 
@@ -27,8 +27,8 @@ func (b nilRAdder) addConn(fr *frameReader) {}
 
 type readerPool interface {
 	addConn(fr *frameReader)
-	RecvMsg() (*Msg, os.Error)
-	Close() os.Error
+	RecvMsg() (*Msg, error)
+	Close() error
 }
 
 type writerPool interface {
@@ -49,24 +49,24 @@ func NewContext() *Context {
 	return &Context{endpoints: map[string]net.Conn{}}
 }
 
-func (c *Context) registerEndpoint(name string) (net.Conn, os.Error) {
+func (c *Context) registerEndpoint(name string) (net.Conn, error) {
 	c1, c2 := net.Pipe()
 	c.epLock.Lock()
 	defer c.epLock.Unlock()
 	if _, ok := c.endpoints[name]; ok {
-		return nil, os.NewError("endpoint already exists")
+		return nil, errors.New("endpoint already exists")
 	}
 	c.endpoints[name] = c2
 	return c1, nil
 }
 
-func (c *Context) findEndpoint(name string) (net.Conn, os.Error) {
+func (c *Context) findEndpoint(name string) (net.Conn, error) {
 	c.epLock.Lock()
 	defer c.epLock.Unlock()
 	if conn, ok := c.endpoints[name]; ok {
 		return conn, nil
 	}
-	return nil, os.NewError("endpoint does not exist")
+	return nil, errors.New("endpoint does not exist")
 }
 
 // Similar to io.MultiWriter, but we have access to its internals and it has a Close method.
@@ -80,7 +80,7 @@ func newMultiWriter() *multiWriter {
 	return &multiWriter{wc: wc}
 }
 
-func (mw *multiWriter) Write(b []byte) (n int, err os.Error) {
+func (mw *multiWriter) Write(b []byte) (n int, err error) {
 	n = len(b)
 	mw.lock.Lock()
 	for _, w := range mw.wc {
@@ -94,7 +94,7 @@ func (mw *multiWriter) Write(b []byte) (n int, err os.Error) {
 	return
 }
 
-func (mw *multiWriter) Close() (err os.Error) {
+func (mw *multiWriter) Close() (err error) {
 	mw.lock.Lock()
 	for _, w := range mw.wc {
 		err2 := w.Close()
@@ -141,13 +141,13 @@ func writeListen(w io.WriteCloser, c chan []byte) {
 	}
 }
 
-func (w *lbWriter) Write(b []byte) (int, os.Error) {
+func (w *lbWriter) Write(b []byte) (int, error) {
 	w.c <- b
 	// TODO: can we do better?
 	return len(b), nil
 }
 
-func (w *lbWriter) Close() os.Error {
+func (w *lbWriter) Close() error {
 	close(w.c)
 	return nil
 }
@@ -181,12 +181,12 @@ func readListen(fr *frameReader, c chan *Msg) {
 	}
 }
 
-func (r *queuedReader) RecvMsg() (*Msg, os.Error) {
+func (r *queuedReader) RecvMsg() (*Msg, error) {
 	mr := <-r.c
 	return mr, nil
 }
 
-func (r *queuedReader) Close() os.Error {
+func (r *queuedReader) Close() error {
 	r.lock.Lock()
 	for _, r := range r.fr {
 		r.Close()
@@ -205,7 +205,7 @@ func newFrameWriter(wc writerPool) *frameWriter {
 	return w
 }
 
-func (fw *frameWriter) sendIdentity(id string) os.Error {
+func (fw *frameWriter) sendIdentity(id string) error {
 	var b []byte
 	if id != "" {
 		b = []byte(id)
@@ -214,7 +214,7 @@ func (fw *frameWriter) sendIdentity(id string) os.Error {
 	return err
 }
 
-func (fw *frameWriter) write(b []byte, flags byte) (n int, err os.Error) {
+func (fw *frameWriter) write(b []byte, flags byte) (n int, err error) {
 	// + 1 for flags
 	l := len(b) + 1
 	if l < 255 {
@@ -239,7 +239,7 @@ func (fw *frameWriter) write(b []byte, flags byte) (n int, err os.Error) {
 	return
 }
 
-func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
+func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err error) {
 	// use two buffers the same size as in io.Copy
 	// We need two because we need to know before we send the first buffer
 	// whether or not the second one will complete in order to set the flags.
@@ -249,13 +249,13 @@ func (fw *frameWriter) ReadFrom(r io.Reader) (n int64, err os.Error) {
 
 	flags := byte(flagMore)
 	nn, err := r.Read(buf1)
-	if err != nil && err != os.EOF {
+	if err != nil && err != io.EOF {
 		return n, err
 	}
 	for flags != 0 {
 		nnn, err := r.Read(buf2)
 		if err != nil {
-			if err == os.EOF {
+			if err == io.EOF {
 				flags = 0
 			} else {
 				return n, err
@@ -281,11 +281,11 @@ func newFrameReader(rc io.ReadCloser) *frameReader {
 	return r
 }
 
-func (fr *frameReader) RecvMsg() (*Msg, os.Error) {
+func (fr *frameReader) RecvMsg() (*Msg, error) {
 	fr.lock.Lock()
 	return newMsg(fr.buf, &fr.lock)
 }
 
-func (fr *frameReader) Close() os.Error {
+func (fr *frameReader) Close() error {
 	return fr.rc.Close()
 }

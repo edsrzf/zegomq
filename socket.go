@@ -1,9 +1,9 @@
 package zmq
 
 import (
+	"errors"
 	"io"
 	"net"
-	"os"
 	"strings"
 )
 
@@ -28,7 +28,7 @@ type Socket struct {
 
 // NewSocket creates a new Socket within the Context c.
 // Initially the Socket is not associated with any endpoints.
-func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
+func (c *Context) NewSocket(typ int, identity string) (*Socket, error) {
 	var r readerPool
 	var w *frameWriter
 	switch typ {
@@ -45,14 +45,14 @@ func (c *Context) NewSocket(typ int, identity string) (*Socket, os.Error) {
 	case SOCK_PAIR, SOCK_REQ, SOCK_REP:
 		fallthrough
 	default:
-		return nil, os.NewError("socket type unimplemented")
+		return nil, errors.New("socket type unimplemented")
 	}
 	return &Socket{c, identity, r, w}, nil
 }
 
 // Read reads an entire message from the socket into memory.
 // It is best to use this method when messages are known to be fairly small.
-func (s *Socket) ReadMsg() ([]byte, os.Error) {
+func (s *Socket) ReadMsg() ([]byte, error) {
 	msg, err := s.RecvMsg()
 	if err != nil {
 		return nil, err
@@ -64,40 +64,40 @@ func (s *Socket) ReadMsg() ([]byte, os.Error) {
 // If there is no Msg available, this call will block until there is one.
 // If the next Msg comes from an endpoint with an already active Msg,
 // this call will block until the existing Msg is closed.
-func (s *Socket) RecvMsg() (*Msg, os.Error) {
+func (s *Socket) RecvMsg() (*Msg, error) {
 	if s.r == nil {
-		return nil, os.NewError("socket is not readable")
+		return nil, errors.New("socket is not readable")
 	}
 	return s.r.RecvMsg()
 }
 
 // Write sends a single Msg to the Socket.
-func (s *Socket) Write(b []byte) (int, os.Error) {
+func (s *Socket) Write(b []byte) (int, error) {
 	if s.w == nil {
-		return 0, os.NewError("socket is not writable")
+		return 0, errors.New("socket is not writable")
 	}
 	return s.w.write(b, 0)
 }
 
 // ReadFrom reads data from r until EOF and sends it as a single Msg.
-func (s *Socket) ReadFrom(r io.Reader) (n int64, err os.Error) {
+func (s *Socket) ReadFrom(r io.Reader) (n int64, err error) {
 	if s.w == nil {
-		return 0, os.NewError("socket is not writable")
+		return 0, errors.New("socket is not writable")
 	}
 	return s.w.ReadFrom(r)
 }
 
-func parseEndpoint(endpoint string) (transport string, addr string, err os.Error) {
+func parseEndpoint(endpoint string) (transport string, addr string, err error) {
 	url := strings.SplitN(endpoint, "://", 2)
 	if len(url) != 2 {
-		err = os.NewError("invalid address")
+		err = errors.New("invalid address")
 		return
 	}
 	transport, addr = url[0], url[1]
 	return
 }
 
-func (s *Socket) Bind(endpoint string) os.Error {
+func (s *Socket) Bind(endpoint string) error {
 	transport, addr, err := parseEndpoint(endpoint)
 	if err != nil {
 		return err
@@ -109,7 +109,7 @@ func (s *Socket) Bind(endpoint string) os.Error {
 	case "tcp":
 		listener, err = net.Listen("tcp", addr)
 	default:
-		err = os.NewError("unsupported transport")
+		err = errors.New("unsupported transport")
 	}
 	if err != nil {
 		return err
@@ -132,7 +132,7 @@ func (s *Socket) listen(listener net.Listener) {
 //	inproc, local in-process, synchronized communication
 //	ipc, local inter-process communication
 //	tcp, unicast transport using TCP
-func (s *Socket) Connect(endpoint string) os.Error {
+func (s *Socket) Connect(endpoint string) error {
 	transport, addr, err := parseEndpoint(endpoint)
 	if err != nil {
 		return err
@@ -146,7 +146,7 @@ func (s *Socket) Connect(endpoint string) os.Error {
 	case "tcp":
 		conn, err = net.Dial("tcp", addr)
 	default:
-		err = os.NewError("unsupported transport")
+		err = errors.New("unsupported transport")
 	}
 	if err != nil {
 		return err
@@ -154,7 +154,7 @@ func (s *Socket) Connect(endpoint string) os.Error {
 	return s.addConn(conn)
 }
 
-func (s *Socket) addConn(conn net.Conn) os.Error {
+func (s *Socket) addConn(conn net.Conn) error {
 	// TODO: avoid making extra frameWriters and frameReaders
 	fw := newFrameWriter(nilWAdder{conn})
 	fw.sendIdentity(s.identity)
@@ -177,7 +177,7 @@ func (s *Socket) addConn(conn net.Conn) os.Error {
 
 // Close closes all endpoints. Any outstanding Msgs from this socket become
 // invalid.
-func (s *Socket) Close() (err os.Error) {
+func (s *Socket) Close() (err error) {
 	if s.w != nil {
 		err = s.w.Close()
 	}
